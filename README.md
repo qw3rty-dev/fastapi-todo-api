@@ -120,7 +120,7 @@ to access the interactive Swagger UI.
 
 ##  Preview
 
-![Swagger UI](assets/swagger.png)
+![Swagger UI](assets/Swagger.png)
 
 ---
 
