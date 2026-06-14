@@ -116,8 +116,6 @@ def edit_task(todo:TodoUpdate,task_id:int):
      if toedit:
          query += ", ".join(toedit) + " WHERE task_id = ? "
          params.append(task_id)
-        
-         print(query)
          cursor.execute(query,params)
          conn.commit()
          conn.close()
@@ -157,29 +155,4 @@ def remove_completed():
      return {"message": f"{cursor.rowcount} completed task(s) removed"}
      
 
-# @router.get("/sort")
-# def sort_tasks(metric: str):
-#      conn = get_connection()
-#      cursor = conn.cursor()
-#      query = "SELECT * FROM todo "
-#      if metric == "due_date":
-#          query += "ORDER BY due_date IS NULL,due_date "
 
-#      elif metric == "priority":
-#          query += """ORDER BY CASE priority
-#                          WHEN 'high' THEN 1
-#                          WHEN 'medium' THEN 2
-#                          WHEN 'low' THEN 3
-#                          END """
-#      elif metric == "task_name":
-#           query += "ORDER BY task_name COLLATE NOCASE "
-
-#      elif metric == "completed":
-#           query += "ORDER BY completed DESC "
-#      else:
-#          raise HTTPException(status_code=400,detail= f"Invalid metric.Choose from (task_name,priority,due_date,completed)")
-         
-#      cursor.execute(query)
-#      rows = cursor.fetchall()
-#      conn.close()
-#      return [dict(row) for row in rows]
