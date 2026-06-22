@@ -1,24 +1,20 @@
-import sqlite3
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase,sessionmaker
 
 
+DATABASE_URL = "sqlite:///todo.db"
 
-def get_connection():
-    conn = sqlite3.connect("todo.db")
-    conn.row_factory = sqlite3.Row
-    return conn
+engine = create_engine(DATABASE_URL)
+
+SessionLocal = sessionmaker(bind=engine)
+
+class Base(DeclarativeBase):
+    pass
 
 
-def init_db():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-                   CREATE TABLE IF NOT EXISTS todo (
-                   task_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                   task_name TEXT UNIQUE,
-                   priority TEXT DEFAULT 'low' 
-                        CHECK (priority IN ('low','medium','high')),
-                   due_date DATE,
-                   completed BOOLEAN);
-                   """)
-    conn.commit()
-    conn.close()
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

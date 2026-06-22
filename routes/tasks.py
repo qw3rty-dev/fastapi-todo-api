@@ -1,22 +1,30 @@
-from fastapi import HTTPException,APIRouter,Query
-from database import get_connection
-from schemas import TodoResponse,TodoCreate,MessageResponse,ShowResponse,Priority,TodoUpdate
+from fastapi import HTTPException,APIRouter,Query,Depends
+from database import get_db
+from schemas import TodoResponse,TodoCreate,MessageResponse,ShowResponse,Priority,TodoUpdate,SortField
 from datetime import date
-from sqlite3 import IntegrityError
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+from sqlalchemy import select,case
+from models import Todo
 router = APIRouter(prefix= "/tasks",tags=["tasks"])
 
 
 @router.post("/",response_model=MessageResponse)
-def create_task(todo:TodoCreate):
-    conn = get_connection()
-    cursor = conn.cursor()
+def create_task(todo:TodoCreate, db: Session = Depends(get_db)):
+    new_todo = Todo(task_name= todo.task_name,
+                    priority= todo.priority,
+                    due_date= todo.due_date,
+                    completed= todo.completed)
     try:
-        cursor.execute("INSERT INTO todo (task_name,priority,due_date,completed) values (?,?,?,?)",(todo.task_name,todo.priority,todo.due_date,todo.completed))
-        conn.commit()
+        db.add(new_todo)
+        db.commit()
+        db.refresh(new_todo)
     except IntegrityError:
+        db.rollback()
         raise HTTPException(status_code=409,detail="Task already exists")
-    conn.close()
     return {"message":"task added"}
+
+
 
 @router.get("/",response_model=ShowResponse)
 def show_task(
@@ -24,162 +32,88 @@ def show_task(
     completed:bool | None = Query(default=None),
     priority:Priority | None = Query(default=None),
     due_date:date | None = Query(default=None),
-    sort:str | None = Query(default = None),
-    show_null_due_date:bool | None = Query(default=None)):
-     conn = get_connection()
-     cursor = conn.cursor()
-     query = "SELECT * FROM todo "
-     conditions = []
-     params= []
-     if task_name:
-         conditions.append("task_name LIKE ?")
-         params.append(f"%{task_name}%")
-     if completed is not None:
-         conditions.append("completed = ?")
-         params.append(int(completed))
-     if priority:
-         conditions.append("priority = ?")
-         params.append(priority)
-     if due_date is not None:
-         conditions.append("due_date = ?")
-         params.append(due_date)
-     if show_null_due_date:
-         conditions.append("due_date IS NULL")  
+    sort:SortField | None = Query(default = None),
+    descending_order: bool = Query(False,description="Sort in descending order"),
+    show_null_due_date:bool | None = Query(default=None),
+    db: Session = Depends(get_db)):
 
-     if conditions:
-         query += " WHERE " + " AND ".join(conditions)
-     if sort:
-         conditions = []
-         if sort == "due_date":
-          conditions.append("ORDER BY due_date IS NULL,due_date")
+    query = select(Todo)
+    if task_name:
+        query = query.where(Todo.task_name.ilike(f"%{task_name}%"))
+    if completed is not None:
+        query = query.where(Todo.completed == completed)
+    if priority:
+        query = query.where(Todo.priority == priority)
+    if due_date is not None:
+        query = query.where(Todo.due_date == due_date)
+    if show_null_due_date:
+        query = query.where(Todo.due_date.is_(None))
+    if sort:                        
 
-         elif sort == "priority":
-            conditions.append("""ORDER BY CASE priority
-                            WHEN 'high' THEN 1
-                            WHEN 'medium' THEN 2
-                            WHEN 'low' THEN 3
-                            END """)
-         elif sort == "task_name":
-            conditions.append("ORDER BY task_name COLLATE NOCASE")
-
-         elif sort == "completed":
-            conditions.append("ORDER BY completed DESC")
-         else:
-            raise HTTPException(status_code=400,detail= f"Invalid metric.Choose from (task_name,priority,due_date,completed)")
-         if conditions:
-              query += conditions[0]
-         
-     cursor.execute(query,params)
-     rows = cursor.fetchall()
-     conn.close()
-     return {"total_tasks": len(rows),
-             "tasks": [dict(row) for row in rows]}
-
-@router.get("/{task_id}",response_model=TodoResponse)
-def show_task_by_id(task_id: int):
-     
-     conn = get_connection()
-     cursor = conn.cursor()
-     cursor.execute("SELECT * FROM todo where task_id = ?",(task_id,))
-     row = cursor.fetchone()
-     if row:
-        conn.close()
-        return dict(row)
-     raise HTTPException(status_code=404,detail= "Task not found")
-
-@router.patch("/edit/{tasks_id}",response_model=MessageResponse)
-def edit_task(todo:TodoUpdate,task_id:int):
-     conn = get_connection()
-     cursor = conn.cursor()
-     cursor.execute("SELECT * FROM todo WHERE task_id = ?", (task_id,))
-     
-     task =cursor.fetchone()
-     if task is None:
-         conn.close()
-         raise HTTPException(status_code=404,detail = "Task not found")   
-     
-     query = "UPDATE todo SET "
-     params = []
-     toedit = []
-     if todo.task_name is not None and todo.task_name != task['task_name']:
-         toedit.append("task_name = ?")
-         params.append(todo.task_name)
-     if todo.priority and todo.priority != task['priority']:
-         toedit.append("priority = ?")
-         params.append(todo.priority)
-     if todo.due_date and todo.due_date != task['due_date']:
-         toedit.append("due_date = ?")
-         params.append(todo.due_date)
-     if todo.completed is not None and todo.completed != task['completed']:
-         toedit.append("completed = ?")
-         params.append(todo.completed)
-     if toedit:
-         query += ", ".join(toedit) + " WHERE task_id = ? "
-         params.append(task_id)
+        if sort == "priority":
+            sort_expression = case(
+                (Todo.priority == Priority.high,1),
+                (Todo.priority == Priority.medium,2),
+                (Todo.priority == Priority.low,3)
+            )
+        else:
+            sort_expression = getattr(Todo,sort.value)
         
-         print(query)
-         cursor.execute(query,params)
-         conn.commit()
-         conn.close()
-         return {"message": "Task Updated"}
-     conn.close()
-     return{"message": "No changes detected"}
+        order = sort_expression.desc() if descending_order else sort_expression.asc()
+        
+        query = query.order_by(order)
+    todos = db.scalars(query).all()
+    return {"total_tasks": len(todos),
+             "tasks": todos}
 
 
-@router.patch("/{task_id}",response_model=MessageResponse)
-def mark_completed(task_id: int):
-     conn = get_connection()
-     cursor = conn.cursor()
-     cursor.execute("UPDATE todo set completed = 1 where task_id = ?",(task_id,))
-     conn.commit()
-     if cursor.rowcount>0:
-         conn.close()
-         return {"message": "Task marked as completed"}
-     raise HTTPException(status_code=404,detail= "Task not found")
 
-@router.delete("/{task_id}",response_model=MessageResponse)
-def remove_task(task_id: int):
-     conn = get_connection()
-     cursor = conn.cursor()
-     cursor.execute("DELETE FROM todo where task_id = ?",(task_id,))
-     conn.commit()
-     conn.close()
-     return {"message": "Task removed"}
-     
+@router.patch("/edit/{task_id}",response_model=MessageResponse)
+def edit_task(update:TodoUpdate,task_id:int,db: Session= Depends(get_db)):
+
+    task = db.scalar(select(Todo).where(Todo.task_id==task_id))
+    if task is None:
+        raise HTTPException(status_code=404,detail = "Task not found")   
+    data = update.model_dump(exclude_unset= True)
+    if not data:
+        return {"message": "No changes detected"}
+
+    for field, value in data.items():
+        setattr(task,field,value)
+    
+    if not db.is_modified(task):
+        return {"message": "No changes detected"}
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409,detail="Task already exists")
+    return {"message": "Task Updated"}
+   
+
 
 @router.delete("/completed",response_model=MessageResponse)
-def remove_completed():
-     conn = get_connection()
-     cursor = conn.cursor()
-     cursor.execute("DELETE FROM todo where completed = 1")
-     conn.commit()
-     conn.close()
-     return {"message": f"{cursor.rowcount} completed task(s) removed"}
+def delete_completed_tasks(db: Session = Depends(get_db)):
+    completed_tasks = db.scalars(select(Todo).where(Todo.completed.is_(True))).all()
+    if not completed_tasks:
+        return {"message": "No completed tasks found"}
+    
+    for task in completed_tasks:
+        db.delete(task)
+        
+    db.commit()
+    return {"message": f"{len(completed_tasks)} Task(s) deleted"}
+
+    
      
+@router.delete("/{task_id}",response_model=MessageResponse)
+def delete_task(task_id: int,
+                db: Session = Depends(get_db)):
+    task = db.scalar(select(Todo).where(Todo.task_id==task_id))
+    if task is None:
+        raise HTTPException(status_code=404,detail = "Task not found")   
+    db.delete(task)  
+    db.commit()
+    return {"message": "Task deleted"}
 
-# @router.get("/sort")
-# def sort_tasks(metric: str):
-#      conn = get_connection()
-#      cursor = conn.cursor()
-#      query = "SELECT * FROM todo "
-#      if metric == "due_date":
-#          query += "ORDER BY due_date IS NULL,due_date "
 
-#      elif metric == "priority":
-#          query += """ORDER BY CASE priority
-#                          WHEN 'high' THEN 1
-#                          WHEN 'medium' THEN 2
-#                          WHEN 'low' THEN 3
-#                          END """
-#      elif metric == "task_name":
-#           query += "ORDER BY task_name COLLATE NOCASE "
-
-#      elif metric == "completed":
-#           query += "ORDER BY completed DESC "
-#      else:
-#          raise HTTPException(status_code=400,detail= f"Invalid metric.Choose from (task_name,priority,due_date,completed)")
-         
-#      cursor.execute(query)
-#      rows = cursor.fetchall()
-#      conn.close()
-#      return [dict(row) for row in rows]
