@@ -1,19 +1,6 @@
-from pydantic import BaseModel,ConfigDict
-from datetime import date
-from enum import Enum
-
-
-class Priority(str,Enum):
-    low = "low"
-    medium = "medium"
-    high = "high"
-
-class SortField(str,Enum):
-    task_name = "task_name"
-    priority = "priority"
-    due_date = "due_date"
-    completed = "completed"
-
+from pydantic import BaseModel,ConfigDict,EmailStr,Field
+from datetime import date,datetime
+from enums import Priority
 
 class TodoCreate(BaseModel):
     task_name: str
@@ -22,7 +9,7 @@ class TodoCreate(BaseModel):
     completed: bool = False
 
 class TodoResponse(BaseModel):
-    task_id: int
+    id: int
     task_name: str
     priority: Priority = Priority.low
     due_date: date | None = None
@@ -44,4 +31,35 @@ class ShowResponse(BaseModel):
     total_tasks : int
     tasks : list[TodoResponse]
     
+
+# _______________________________user__________________________________
+
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=3,max_length=30)
+    email: EmailStr
+    password: str = Field(min_length=8,max_length=128)
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: EmailStr
+    is_active: bool
+    is_verified: bool
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+    
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str= Field(min_length=8,max_length=128)
+
+
+#________________________________TokenResponse__________________________
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+
 

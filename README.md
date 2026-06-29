@@ -1,16 +1,26 @@
-#  Todo API
+# Todo API
 
-A RESTful Todo API built with **FastAPI**, **SQLAlchemy 2.0**, and **SQLite** for efficient task management. The API supports CRUD operations, filtering, sorting, partial updates, and clean RESTful design.
+A secure RESTful Todo API built with **FastAPI**, **SQLAlchemy 2.0**, and **SQLite**. The API supports user authentication using JWT, user-specific task management, filtering, sorting, partial updates, and follows RESTful design principles.
 
 ---
 
-##  Features
+## Features
+
+### Authentication
+
+- User registration
+- User login
+- Password hashing using **pwdlib**
+- JWT authentication
+- Protected endpoints
+- Retrieve current authenticated user (`/users/me`)
+
+### Task Management
 
 - Create new tasks
 - Retrieve all tasks
 - Retrieve a task by ID
 - Update existing tasks
-- Mark tasks as completed
 - Delete individual tasks
 - Delete all completed tasks
 - Search tasks by name
@@ -24,42 +34,55 @@ A RESTful Todo API built with **FastAPI**, **SQLAlchemy 2.0**, and **SQLite** fo
   - Priority
   - Due date
   - Completion status
-- Request validation using Pydantic
+
+### Other Features
+
+- User-specific task ownership
+- Request & response validation using Pydantic
+- SQLAlchemy 2.0 ORM
 - Proper HTTP status codes and exception handling
 - Interactive API documentation with Swagger UI
 
 ---
 
-##  Tech Stack
+## Tech Stack
 
 - Python 3.11
 - FastAPI
 - SQLAlchemy 2.0
 - SQLite
-- Pydantic v2 
+- Pydantic v2
+- Pwdlib
+- PyJWT
 - Uvicorn
 
 ---
 
-##  Project Structure
+## Project Structure
 
 ```text
 todo/
 ├── assets/
 │   └── swagger.png
 ├── routes/
+│   ├── auth.py
 │   └── tasks.py
+├── utils/
+│   ├── jwt_handler.py
+│   └── security.py
 ├── database.py
+├── models.py
 ├── schemas.py
 ├── main.py
 ├── requirements.txt
+├── .env.example
 ├── .gitignore
 └── README.md
 ```
 
 ---
 
-##  Installation
+## Installation
 
 Clone the repository:
 
@@ -79,15 +102,15 @@ Create a virtual environment:
 python -m venv venv
 ```
 
-Activate the virtual environment.
+Activate it.
 
-**Windows**
+### Windows
 
 ```bash
 venv\Scripts\activate
 ```
 
-**Linux/macOS**
+### Linux/macOS
 
 ```bash
 source venv/bin/activate
@@ -99,6 +122,12 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+Create a `.env` file from `.env.example`:
+
+```env
+SECRET_KEY=your_secret_key_here
+```
+
 Run the development server:
 
 ```bash
@@ -106,7 +135,34 @@ uvicorn main:app --reload
 ```
 
 ---
+
+## Authentication
+
+Most task endpoints require authentication.
+
+1. Register a new account.
+2. Login using your email and password.
+3. Click **Authorize** in Swagger UI.
+4. Enter your **email** in the **Username** field.
+5. Enter your password.
+6. Leave **Client ID** and **Client Secret** empty.
+7. Click **Authorize**.
+
+Swagger will automatically attach the JWT to all protected requests.
+
+---
+
 ## API Endpoints
+
+### Authentication
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /users/register | Register a new user |
+| POST | /users/login | Login and receive JWT |
+| GET | /users/me | Retrieve current authenticated user |
+
+### Tasks
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -119,8 +175,7 @@ uvicorn main:app --reload
 
 ---
 
-
-##  API Documentation
+## API Documentation
 
 Once the server is running, open:
 
@@ -128,55 +183,59 @@ Once the server is running, open:
 http://127.0.0.1:8000/docs
 ```
 
-to access the interactive Swagger UI.
-
 ---
 
-##  Preview
+## Preview
 
 ![Swagger UI](assets/Swagger.png)
 
 ---
 
-
 ## Example Queries
 
+```http
 GET /tasks?priority=high
 
 GET /tasks?completed=true
 
-GET /tasks?sort=priority&descending=true
+GET /tasks?sort=priority&descending_order=true
 
 GET /tasks?task_name=study
 
 GET /tasks?show_null_due_date=true
+```
 
 ---
 
-
-##  API Capabilities
-
-- CRUD operations
-- Dynamic filtering using query parameters
-- Dynamic sorting
-- Partial updates (PATCH)
-- Pydantic request & response models
-- Enum-based priority validation
-- SQLAlchemy 2.0 ORM
-- Session management
-- Dynamic query construction
-- Response validation using Pydantic
-- SQLite database integration
-
----
-
-##  Future Improvements
+## API Capabilities
 
 - JWT Authentication
-- User authentication & authorization
-- Pagination
-- Docker support
-- Automated testing
-- PostgreSQL support
+- Password Hashing
+- User Authorization
+- CRUD Operations
+- Dynamic Filtering
+- Dynamic Sorting
+- Partial Updates (PATCH)
+- SQLAlchemy 2.0 ORM
+- SQLite Integration
+- Pydantic Validation
+- Response Validation
+- Session Management
+- RESTful API Design
 
 ---
+
+## Future Improvements
+
+- Refresh Tokens
+- Email Verification
+- Password Reset
+- Pagination
+- Docker Support
+- PostgreSQL
+- Alembic Migrations
+- Automated Testing
+- CI/CD Pipeline
+
+---
+

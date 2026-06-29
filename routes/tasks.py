@@ -1,20 +1,25 @@
 from fastapi import HTTPException,APIRouter,Query,Depends
 from database import get_db
-from schemas import TodoResponse,TodoCreate,MessageResponse,ShowResponse,Priority,TodoUpdate,SortField
+from schemas import TodoResponse,TodoCreate,MessageResponse,ShowResponse,TodoUpdate
+from enums import SortField,Priority
 from datetime import date
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy import select,case
-from models import Todo
+from models import Todo,User
+from utils.jwt_handler import get_current_user
 router = APIRouter(prefix= "/tasks",tags=["tasks"])
 
 
 @router.post("/",response_model=MessageResponse)
-def create_task(todo:TodoCreate, db: Session = Depends(get_db)):
+def create_task(todo:TodoCreate,
+                current_user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
     new_todo = Todo(task_name= todo.task_name,
                     priority= todo.priority,
                     due_date= todo.due_date,
-                    completed= todo.completed)
+                    completed= todo.completed,
+                    user_id= current_user.id)
     try:
         db.add(new_todo)
         db.commit()
@@ -35,9 +40,10 @@ def show_task(
     sort:SortField | None = Query(default = None),
     descending_order: bool = Query(False,description="Sort in descending order"),
     show_null_due_date:bool | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)):
-
-    query = select(Todo)
+ 
+    query = select(Todo).where(Todo.user_id == current_user.id)
     if task_name:
         query = query.where(Todo.task_name.ilike(f"%{task_name}%"))
     if completed is not None:
@@ -69,9 +75,11 @@ def show_task(
 
 
 @router.patch("/edit/{task_id}",response_model=MessageResponse)
-def edit_task(update:TodoUpdate,task_id:int,db: Session= Depends(get_db)):
+def edit_task(update:TodoUpdate,task_id:int,
+              current_user: User = Depends(get_current_user),
+              db: Session= Depends(get_db)):
 
-    task = db.scalar(select(Todo).where(Todo.task_id==task_id))
+    task = db.scalar(select(Todo).where(Todo.id==task_id,Todo.user_id == current_user.id))
     if task is None:
         raise HTTPException(status_code=404,detail = "Task not found")   
     data = update.model_dump(exclude_unset= True)
@@ -93,8 +101,8 @@ def edit_task(update:TodoUpdate,task_id:int,db: Session= Depends(get_db)):
 
 
 @router.delete("/completed",response_model=MessageResponse)
-def delete_completed_tasks(db: Session = Depends(get_db)):
-    completed_tasks = db.scalars(select(Todo).where(Todo.completed.is_(True))).all()
+def delete_completed_tasks(db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    completed_tasks = db.scalars(select(Todo).where(Todo.user_id == current_user.id,Todo.completed.is_(True))).all()
     if not completed_tasks:
         return {"message": "No completed tasks found"}
     
@@ -108,8 +116,9 @@ def delete_completed_tasks(db: Session = Depends(get_db)):
      
 @router.delete("/{task_id}",response_model=MessageResponse)
 def delete_task(task_id: int,
+                current_user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
-    task = db.scalar(select(Todo).where(Todo.task_id==task_id))
+    task = db.scalar(select(Todo).where(Todo.id==task_id,Todo.user_id == current_user.id))
     if task is None:
         raise HTTPException(status_code=404,detail = "Task not found")   
     db.delete(task)  
@@ -117,3 +126,15 @@ def delete_task(task_id: int,
     return {"message": "Task deleted"}
 
 
+
+@router.get("/{task_id}",response_model=TodoResponse)
+def show_task_by_id(task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)):
+
+    query = select(Todo).where(Todo.user_id == current_user.id,Todo.id == task_id)
+    task = db.scalar(query)
+    if task is None:
+       raise HTTPException(status_code=404,detail = "Task not found")
+
+    return task
